@@ -19,7 +19,7 @@ template<class T1, class T2> using P = pair<T1, T2>;
 #define pf push_front
 #define ppb pop_back
 #define ppf pop_front
-#define pp pop()
+#define pp pop
 #define ins insert
 #define fi first
 #define se second
