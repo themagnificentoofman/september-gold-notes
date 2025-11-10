@@ -1,87 +1,138 @@
 // Source: https://usaco.guide/general/io
+// #pragma GCC optimize("Ofast")
+// #pragma GCC target("avx2")
 
 #include <bits/stdc++.h>
 using namespace std;
+
+// basic type aliases
+using str = string;
 using ll = long long;
-using db = long double;
+using i128 = __int128_t; // sometimes will use lll, but can easily get mixed up w/ ll (use i128 by default)
+using db = long double;  // change to double if TL is tight (almost never)
+
+// pairs
+template<class T1, class T2> using P = pair<T1,T2>;
+#define mp make_pair
+#define fi first
+#define se second
+using pi = P<int,int>;
+using pl = P<ll,ll>;
+using pd = P<db,db>;
+
+// vectors
 template<class T> using V = vector<T>;
-template<class T1, class T2> using P = pair<T1, T2>;
-#define all(x) begin(x), end(x)
+#define sz(x) int((x).size())
+#define bg(x) begin(x)
+#define all(x) bg(x), end(x)
+#define rall(x) (x).rbegin(), (x).rend() 
+#define sor(x) sort(all(x)) 
+#define rsz resize
+#define ins insert 
 #define pb push_back
-#define f first
-#define s second
+#define eb emplace_back
+#define ft front()
+#define bk back()
+using vi = V<int>;
+using vb = V<bool>;
+using vl = V<ll>;
+using vd = V<db>;
+using vs = V<str>;
+using vpi = V<pi>;
+using vpl = V<pl>;
+using vpd = V<pd>;
+
+// misc. ops & aliases
+#define pf push_front
+#define ppb pop_back
+#define ppf pop_front
+#define lb lower_bound
+#define ub upper_bound
+template<class T, size_t SZ> using AR = array<T,SZ>;
+template<class T> int lwb(V<T>& a, const T& b) { return int(lb(all(a),b)-bg(a)); }
+template<class T> int upb(V<T>& a, const T& b) { return int(ub(all(a),b)-bg(a)); }
+template<class T> using pq = priority_queue<T>;
+template<class T> using pqg = priority_queue<T,V<T>,greater<T>>;
+
+// input & output
 inline namespace FileIO {
 	void setIn(string s){freopen(s.c_str(),"r",stdin);}
 	void setOut(string s){freopen(s.c_str(),"w",stdout);}
 	void setIO(string s = ""){
 		cin.tie(0)->sync_with_stdio(0);
-		cin.exceptions(cin.failbit);
-		if (size(s)) setIn(s+".in"), setOut(s+".out");
+		cin.exceptions(cin.failbit); // comment out if breaks things
+		if (sz(s)) setIn(s+".in"), setOut(s+".out");
 	}
 }
+
+// constants
 const db PI = acos((db)-1);
+const ll NEG = -(1LL<<60);
 
-const int NMAX = 250;
-const int WMAX = 1000;
-const ll INF = 1e18;
+/*
+(1) Problem recap in simple terms
+- We have n cows; each cow has weight w_i and talent t_i.
+- We must pick a subset with total weight >= W to maximize floor(1000 * sum(t_i) / sum(w_i)).
+- Output is an integer (the best ratio scaled by 1000).
 
-int weights[NMAX];
-int talent[NMAX];
+(2) Things to notice and step-by-step derivation
+- Maximizing a ratio is tricky; use the standard "binary search on the answer" trick.
+- Suppose the target ratio is y/1000. For any subset S, define adjusted value:
+      val(S) = sum(1000*t_i - y*w_i) over i in S.
+  If there exists a subset with weight >= W and val(S) >= 0, then the true answer >= y.
+- So feasibility(y) reduces to a 0/1 knapsack:
+    dp[k] = max val achievable with EXACT total weight k, but we "cap" any k >= W into one bucket W.
+- Transition: for each item (w, t) with value = 1000*t - y*w,
+    for k from W..0:
+      nk = min(W, k + w)
+      dp[nk] = max(dp[nk], dp[k] + value)
+- If dp[W] >= 0 after processing all items, y is feasible.
 
-int n;
-int w;
+(3) Solution outline
+- Binary search y in integer space [0, 1e6] (since t_i <= 1000 and w_i >= 1 ⇒ ratio*1000 ≤ 1e6).
+- For each mid = y, run the capped-weight knapsack to test feasibility.
+- Maintain invariant: lo feasible, hi infeasible. Answer is lo.
+*/
 
-// The dp state.
-// For 0 <= i < w, this is the maximum adjusted-talent-score achievable
-// with weight exactly i.
-// For i=w, this is the maximum talent achievable
-// with weight AT LEAST w.
-ll dp[WMAX + 1];
+inline void solve() {
+	int n, W; 
+	cin >> n >> W;
 
-// Check if a ratio of y/1000 is achievable.
-bool doable(int y) {
-  for(int i = 0; i <= w; i++) dp[i] = -INF;
-  dp[0] = 0;
+	vi w(n), t(n);
+	for (int i = 0; i < n; ++i) cin >> w[i] >> t[i];
 
-  for (int j = 0; j < n; j++) {
-    ll value = 1000*(ll)talent[j] - y*(ll)weights[j];
-    int inc = weights[j];
-    for (int k = w; k >= 0; k--) {
-      int k1 = min(w, k + inc);
-      if (dp[k] != -INF) {
-        if (dp[k1] < dp[k] + value) {
-          dp[k1] = dp[k] + value;
-        }
-      }
-    }
-  }
+	/* Feasibility check for a candidate ratio y (scaled by 1000).
+	   Returns true if there exists a subset with total weight >= W
+	   whose adjusted sum sum(1000*t_i - y*w_i) >= 0. */
+	auto feasible = [&](int y) -> bool {
+		vl dp(W+1, NEG);
+		dp[0] = 0; // base: no items, weight 0, adjusted value 0
 
-  return dp[w] >= 0;
+		for (int i = 0; i < n; ++i) {
+			ll val = 1000LL * t[i] - 1LL * y * w[i]; // adjusted value for this cow
+			int wi = w[i];
+
+			// 0/1 knapsack in descending k to avoid reuse within same iteration.
+			for (int k = W; k >= 0; --k) if (dp[k] != NEG) {
+				int nk = k + wi;
+				if (nk > W) nk = W; // cap all weights >= W into index W
+				dp[nk] = max(dp[nk], dp[k] + val);
+			}
+		}
+		return dp[W] >= 0; // feasible if we can reach weight >= W with non-negative adjusted value
+	};
+
+	// Binary search for the maximum feasible y (answer is in [0, 1e6]).
+	int lo = 0, hi = 1'000'000 + 1; // invariant: lo feasible, hi infeasible
+	while (lo + 1 < hi) {
+		int mid = (lo + hi) / 2;
+		if (feasible(mid)) lo = mid; else hi = mid;
+	}
+
+	cout << lo << '\n';
 }
 
 int main() {
-  setIO("talent");
-  cin >> n >> w;
-  assert(1 <= n && n <= NMAX);
-  assert(1 <= w && w <= WMAX);
-
-  for (int i = 0; i < n; i++) {
-    cin >> weights[i] >> talent[i];
-    assert(1 <= weights[i] && weights[i] <= 99951);
-    assert(1 <= talent[i] && talent[i] <= 1000);
-  }
-
-  // Binary search
-  // Invariant: lo <= answer < hi
-  int lo = 0;
-  int hi = (1000 * 250 * 1000) + 1;
-  while (hi > lo + 1) {
-    int mid = (lo + hi) / 2;
-    if (doable(mid)) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-  cout << lo;
+	setIO("talent");
+	solve(); // single case
 }
