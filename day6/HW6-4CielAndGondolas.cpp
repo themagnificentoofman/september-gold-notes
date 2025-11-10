@@ -70,6 +70,46 @@ const db PI = acos((db)-1);
 const ll BIG = (ll)4e18; // large INF for ll
 const int MAXN = 4005;
 
+/*
+ (1) Problem recap in simple terms
+ We have n people in a fixed order and a matrix u[i][j] that tells how unfamiliar
+ person i is with person j. We must split the line of people into k contiguous
+ groups (gondolas). The cost of one gondola is the sum of u[i][j] over all pairs
+ of people inside that gondola. The goal is to choose where to cut so that the
+ total unfamiliarity over all gondolas is as small as possible.
+
+ (2) Things to notice and step-by-step derivation
+ The cost of putting people from l to r into a single gondola only depends on
+ the submatrix u[l..r][l..r]. If we precompute a 2D prefix sum of u, we can get
+ that submatrix sum in O(1), and since u is symmetric and u[i][i] = 0, the
+ gondola cost is just half of the sum over that square.
+ Define dp[g][i] as the minimum total cost to split the first i people into g
+ gondolas. The last gondola will cover some segment (p+1..i), so the transition
+ is:
+     dp[g][i] = min over p < i ( dp[g-1][p] + cost(p+1, i) ).
+ For a fixed g, a naive computation would try all p for each i, giving O(n^2)
+ for that layer and O(k * n^2) overall, which is too slow.
+ The key property for this problem is that the optimal p for dp[g][i] is
+ monotone in i (the argmin does not move backwards as i increases). This
+ monotonicity lets us apply divide-and-conquer optimization: for a middle index
+ mid, once we know the best p for mid, we can restrict the candidate range of p
+ for indices to the left and right. This reduces each DP layer to roughly
+ O(n log n) time instead of O(n^2).
+
+ (3) Solution outline
+ We first read the matrix as characters '0'/'1' and build the 2D prefix sum
+ array pref so that cost(l, r) can be computed in O(1) by taking the sum over
+ the square [l..r] x [l..r] and dividing by 2.
+ Next, we initialize the DP for g = 1: using one gondola for the first i people
+ means they all sit together in [1..i], so dp[1][i] = cost(1, i). Then, for
+ each g from 2 to k, we run the recursive compute(g, L, R, optL, optR) that
+ fills dp[g][i] for i in [L..R] using the monotone divide-and-conquer trick on
+ the transition dp[g][i] = min_p (dp[g-1][p] + cost(p+1, i)). We only store two
+ rows of DP at a time (previous g and current g) to save memory. After finishing
+ all k layers, the answer is dp[k][n] (on row k & 1), which we print as the
+ minimum total unfamiliarity for Ciel and Gondolas.
+*/
+
 // prefix sums of u for cost on intervals
 static ll pref[MAXN][MAXN];
 
